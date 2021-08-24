@@ -9,11 +9,6 @@ import time
 import numpy
 import torch
 import random
-import timeit
-import itertools as it
-import tensorflow as tf
-
-## PyTorch Models
 
 class Flatten(torch.nn.Module):
 	def __init__(self):
@@ -55,7 +50,6 @@ class ToyNet(torch.nn.Module):
 	def forward(self, X):
 		with torch.no_grad():
 			return self.conv3(self.relu2(self.conv2(self.relu1(self.conv1(X)))))
-
 
 class DeepSEA(torch.nn.Module):
 	def __init__(self, n_inputs, seq_len=None, random_state=0):
@@ -267,153 +261,3 @@ class BPNet(torch.nn.Module):
 			X = self.fconv(X)
 			#X = self.logsoftmax(self.fconv(X))
 			return X
-
-
-###
-
-def OneLayerTF(n_inputs, n_filters=512, kernel_size=7, seq_len=None, random_state=0):
-	tf.random.set_seed(random_state)
-
-	inp = tf.keras.Input(shape=(seq_len, n_inputs))
-	
-	x = tf.keras.layers.Conv1D(n_filters, kernel_size, padding='same')(inp)
-	x = tf.keras.layers.Flatten()(x)
-	
-	model = tf.keras.Model(inputs=inp, outputs=x, name="OneLayer")
-	return model
-
-def ToyNetTF(n_inputs, n_filters=512, kernel_size=7, seq_len=None, random_state=0):
-	tf.random.set_seed(random_state)
-	
-	inp = tf.keras.Input(shape=(seq_len, n_inputs))
-	
-	x = tf.keras.layers.Conv1D(n_filters, kernel_size, padding='same', activation='relu')(inp)
-	x = tf.keras.layers.Conv1D(n_filters, kernel_size, padding='same', activation='relu')(x)
-	x = tf.keras.layers.Conv1D(1, kernel_size, padding='same', name="conv3")(x)
-	x = tf.keras.layers.Flatten()(x)
-	
-	model = tf.keras.Model(inputs=inp, outputs=x, name="ToyNet")
-	return model
-
-def DeepSEATF(n_inputs, seq_len, random_state=0):
-	tf.random.set_seed(random_state)
-
-	inp = tf.keras.Input(shape=(seq_len, n_inputs))
-	
-	x = tf.keras.layers.Conv1D(320, 9, padding='same', activation='relu')(inp)
-	x = tf.keras.layers.MaxPool1D(4)(x)
-
-	x = tf.keras.layers.Conv1D(480, 9, padding='same', activation='relu')(x)
-	x = tf.keras.layers.MaxPool1D(4)(x)
-
-	x = tf.keras.layers.Conv1D(960, 9, padding='same', activation='relu')(x)
-
-	x = tf.keras.layers.Flatten()(x)
-	x = tf.keras.layers.Dense(925, activation='sigmoid')(x)
-	
-	model = tf.keras.Model(inputs=inp, outputs=x, name="DeepSEA")
-	return model
-
-def BassetTF(n_inputs, seq_len, random_state=0):
-	# Taken from https://github.com/kundajelab/fastISM/blob/master/fastISM/models/basset.py
-	tf.random.set_seed(random_state)
-
-	inp = tf.keras.Input(shape=(seqlen, numchars))
-
-	# conv mxp 1
-	x = tf.keras.layers.Conv1D(300, 19, padding='same', activation='relu')(inp)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.MaxPool1D(3)(x)
-
-	# conv mxp 2
-	x = tf.keras.layers.Conv1D(200, 11, padding='same', activation='relu')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.MaxPool1D(4)(x)
-
-	# conv mxp 3
-	x = tf.keras.layers.Conv1D(200, 7, padding='same', activation='relu')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.MaxPool1D(4)(x)
-
-	# fc
-	x = tf.keras.layers.Flatten()(x)
-	x = tf.keras.layers.Dense(1000, activation='relu')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.Dense(1000, activation='relu')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.Dense(num_outputs)(x)
-
-	model = tf.keras.Model(inputs=inp, outputs=x, name=name)
-	return model
-
-def FactorizedBassetTF(n_inputs, seq_len, random_state=0):
-	# Taken from https://github.com/kundajelab/fastISM/blob/master/fastISM/models/factorized_basset.py
-	tf.random.set_seed(random_state)
-
-	inp = tf.keras.Input(shape=(seq_len, n_inputs))
-	
-	# conv mxp 1
-	x = tf.keras.layers.Conv1D(48, 3, padding='same', name='conv1a')(inp)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-	x = tf.keras.layers.Conv1D(64, 3, padding='same', name='conv1b')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-	x = tf.keras.layers.Conv1D(100, 3, padding='same', name='conv1c')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-	x = tf.keras.layers.Conv1D(150, 7, padding='same', name='conv1d')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-	x = tf.keras.layers.Conv1D(300, 7, padding='same', name='conv1e')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-
-	x = tf.keras.layers.MaxPool1D(3)(x)
-
-	# conv mxp 2
-	x = tf.keras.layers.Conv1D(200, 7, padding='same', name='conv2a')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-	x = tf.keras.layers.Conv1D(200, 3, padding='same', name='conv2b')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-	x = tf.keras.layers.Conv1D(200, 3, padding='same', name='conv2c')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-
-	x = tf.keras.layers.MaxPool1D(4)(x)
-
-	# conv mxp 3
-	x = tf.keras.layers.Conv1D(200, 7, padding='same', name='conv3')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.ReLU()(x)
-
-	x = tf.keras.layers.MaxPool1D(4)(x)
-
-	# fc
-	x = tf.keras.layers.Flatten()(x)
-	x = tf.keras.layers.Dense(1000, activation='relu', name='fc1')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.Dense(1000, activation='relu', name='fc2')(x)
-	x = tf.keras.layers.BatchNormalization()(x)
-	x = tf.keras.layers.Dense(1, name='fc3')(x)
-
-	model = tf.keras.Model(inputs=inp, outputs=x, name="FactorizedBasset")
-	return model
-
-def BPNetTF(n_inputs, seq_len, random_state=0):
-	tf.random.set_seed(random_state)
-
-	inp = tf.keras.Input(shape=(seq_len, n_inputs))
-
-	x = tf.keras.layers.Conv1D(64, 21, activation='relu', padding='same')(inp)
-	x = tf.keras.layers.Conv1D(64, 3, dilation_rate=2, activation='relu', padding='same')(x)
-	x = tf.keras.layers.Conv1D(64, 3, dilation_rate=4, activation='relu', padding='same')(x)
-	x = tf.keras.layers.Conv1D(64, 3, dilation_rate=8, activation='relu', padding='same')(x)
-
-	x = tf.keras.layers.Conv1D(1, 75, padding='same')(x)
-	x = tf.keras.layers.Flatten()(x)
-
-	model = tf.keras.Model(inputs=inp, outputs=x, name="BPNet")
-	return model

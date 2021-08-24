@@ -26,7 +26,7 @@ terminal_layers = Unsqueeze, Flatten
 def precompute(model, X_0, alpha=2, use_layers=use_layers, 
     ignore_layers=ignore_layers, device='cpu', random_state=None, 
     verbose=False):
-    """Precomputing properties of the model for a CS-ISM run.
+    """Precomputing properties of the model for a Yuzu-ISM run.
 
     This function will take in a model, a reference sequence, and a set
     of sequences that each contain perturbations from the reference, and
@@ -542,7 +542,7 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
 
 @torch.no_grad()
-def compressed_sensing_ism(model, X_0, As, betas, masks, receptive_fields, 
+def yuzu_ism(model, X_0, As, betas, masks, receptive_fields, 
     n_probess, seq_lens, n_nonzeros, device='cpu', use_layers=use_layers, 
     ignore_layers=ignore_layers, terminal_layers=terminal_layers, verbose=False):
     """Perform ISM using compressed sensing to reduce the necessary compute.
@@ -743,7 +743,7 @@ def compressed_sensing_ism(model, X_0, As, betas, masks, receptive_fields,
 
         # If it is still computationally efficient to operate on deltas
         # and the layer is a type that can be quickly processed using
-        # compressed sensing then use the CS-ISM procedure
+        # compressed sensing then use the Yuzu-ISM procedure
         elif isinstance(layer, use_layers):
             X_delta = _compressed_sensing_convolution(layer=layer,
                 X_delta=X_delta, A=As[i], beta=betas[i], mask=masks[i], 
