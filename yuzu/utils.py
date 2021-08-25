@@ -8,6 +8,12 @@ of the yuzu codebase.
 
 import numpy
 import torch
+import itertools as it
+
+try:
+    import tensorflow as tf
+except:
+    pass
 
 def perturbations(X_0):
     """Produce all edit-distance-one pertuabtions of a sequence.
@@ -57,16 +63,13 @@ def delta_perturbations(X_0):
     X: torch.Tensor, shape=((n_choices-1)*seq_len, n_choices, seq_len)
         Each single-position perturbation of seq.
     """
-
     _, n_choices, seq_len = X_0.shape
     idxs = X_0[0].argmax(axis=0)
-
     X = numpy.zeros((n_choices-1, n_choices, seq_len), dtype='float32')
     for i in range(seq_len):
         for j in range(n_choices-1):
             X[j, idxs[i], i] = -1
             X[j, (idxs[i]+j+1) % n_choices, i] = 1
-
     return torch.from_numpy(X)
 
 def calculate_flanks(seq_len, receptive_field):
@@ -128,9 +131,13 @@ def tensorflow_to_pytorch(tf_model, torch_model):
         from the Tensorflow model.
     """
 
-    tf_use_layers = (tf.keras.layers.Conv1D, 
-                    tf.keras.layers.BatchNormalization, 
-                    tf.keras.layers.Dense)
+    try:
+        tf_use_layers = (tf.keras.layers.Conv1D, 
+                        tf.keras.layers.BatchNormalization, 
+                        tf.keras.layers.Dense)
+    except:
+        raise ValueError("TensorFlow must be installed to use this function.")
+
 
     torch_use_layers = (torch.nn.Conv1d,
                        torch.nn.BatchNorm1d,

@@ -45,8 +45,10 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
     X = perturbations(X_0)
     X_0 = torch.from_numpy(X_0)
 
-    if device[:4] == 'cuda':
+    if device[:4] != str(next(model.parameters()).device):
         model = model.to(device)
+
+    if device[:4] != X_0.device:
         X_0 = X_0.to(device)
 
     starts = numpy.arange(0, len(X), batch_size)
@@ -58,7 +60,9 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
             X_ = X_.to(device)
         
         y = model(X_)
+
         X_baseline.append(y)
+        del X_
 
     X_baseline = torch.cat(X_baseline)
 

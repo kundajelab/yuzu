@@ -16,6 +16,7 @@ from .models import Flatten
 from .models import Unsqueeze
 
 from .utils import calculate_flanks
+from .utils import perturbations
 from .utils import delta_perturbations
 
 global use_layers, ignore_layers, terminal_layers
@@ -23,6 +24,7 @@ use_layers = torch.nn.Conv1d, torch.nn.MaxPool1d, torch.nn.AvgPool1d
 ignore_layers = torch.nn.ReLU, torch.nn.BatchNorm1d, torch.nn.LogSoftmax
 terminal_layers = Unsqueeze, Flatten
 
+@torch.no_grad()
 def precompute(model, X_0, alpha=2, use_layers=use_layers, 
     ignore_layers=ignore_layers, device='cpu', random_state=None, 
     verbose=False):
@@ -250,10 +252,16 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
                     for i in range(seq_len):
                         m = before_mask[:, i]
                         A_[i, :, :int(m.sum())] = A[m].T
+
+                    del A
                 else:
                     A_, beta = False, False
 
                 # Calculate clipped masks (ignoring edges)
+                if device[:4] == 'cuda':
+                    before_mask = before_mask.cuda()
+                    mask = mask.cuda()
+
                 clipped_before_mask = torch.clone(before_mask)
                 clipped_before_mask[:, :bfl] = False
                 clipped_before_mask[:, bseq_len-bfr:] = False
@@ -274,7 +282,7 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
                     m = torch.where(mask[:, idx] == True)[0]
                     mask_[1][0].append(m)
 
-                del mask, clipped_mask
+                del mask, clipped_mask, X_delta
 
             else:
                 # If the layer shouldn't be ignored but also won't be applied
@@ -300,6 +308,8 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
                     n_probes = int(n_nonzero * alpha)
 
                     seq_lens_ = bseq_len, seq_len
+
+                    del X_delta
                 else:
                     seq_lens_ = seq_lens_[1], seq_lens_[1]
 
@@ -309,9 +319,6 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
 
             if verbose:
                 print(l, layer, n_probes, receptive_field_, seq_lens_, n_nonzeros_)
-
-            if 'X_delta' in locals():
-                del X_delta
 
             As.append(A_)
             betas.append(beta)
@@ -325,9 +332,14 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
 
+    del X, X_0
+    if device[:4] == 'cuda':
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
     return As, betas, masks, receptive_fields, n_probess, seq_lens, n_nonzeros
 
-
+@torch.no_grad()
 def _compressed_sensing_convolution(layer, X_delta, A, beta, mask, 
     n_probes, return_timings=False, verbose=False):
     """Calculate the output of a single layer using compressed sensing.
@@ -425,6 +437,7 @@ def _compressed_sensing_convolution(layer, X_delta, A, beta, mask,
         return X, t
     return X
 
+@torch.no_grad()
 def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes, 
     seq_lens, n_nonzeros, n_seqs):
     """Performs an exact pooling operation given only the deltas.
@@ -491,6 +504,9 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
     row_mask0, col_mask0 = masks[0][1]
     row_mask1, col_mask1 = masks[1][1]
+    if device[:4] == 'cuda':
+        row_mask0, col_mask0 = row_mask0.cpu(), col_mask0.cpu()
+        row_mask1, col_mask1 = row_mask1.cpu(), col_mask1.cpu()
 
     row_mask00 = row_mask0 - mask_map[col_mask0]
     row_mask10 = row_mask1 - mask_map2[col_mask1]
@@ -509,6 +525,9 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
     for j, idx in enumerate(idxs0):
         r = masks[0][0][j]
+        if device[:4] == 'cuda':
+            r = r.cpu()
+
         c = torch.full_like(r, idx) - mask_map[r]
         X1[(c, r)] += X_delta[:len(r), :, idx]             
 
@@ -533,10 +552,14 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
     for j, idx in enumerate(idxs1):
         r = masks[1][0][j]
+        if device[:4] == 'cuda':
+            r = r.cpu()
+
         c = torch.full_like(r, idx) - mask_map2[r]
         X_delta[:len(r), idx] = X1[(c, r)] - X_0[:, :, idx]
 
     X_delta = X_delta.permute(0, 2, 1).contiguous()
+    del X_update, X1, rows, cols
     return X_0, X_delta
 
 
@@ -634,10 +657,18 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
     n_choices = X_0.shape[1]
     X_0 = torch.from_numpy(X_0)
 
-    if device[:4] == 'cuda':
+    ticz = time.time()
+
+    if device[:4] != str(next(model.parameters()).device):
         model = model.to(device)
+
+    if device[:4] != X_delta.device:
         X_delta = X_delta.to(device)
+
+    if device[:4] != X_0.device:
         X_0 = X_0.to(device)
+
+    print(time.time() - ticz, "zz1")
 
     n_seqs = X_delta.shape[0] * X_delta.shape[-1]
     n_nonzero, in_filters, seq_len = X_delta.shape
@@ -697,6 +728,7 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
                 X[m] += X_update[idx, :len(m)]
 
             deltas = False
+            del X_delta, X_update
 
             if verbose:
                 print("Z", layer, time.time() - tic)
@@ -707,7 +739,6 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         # pass them through the next layer.
         # X_dense -> X
         elif n_probess[i] > n_seqs or isinstance(layer, terminal_layers):
-            deltas = False
             seq_len = seq_lens[i][0]
             fl, fr, idxs = calculate_flanks(seq_len, receptive_fields[i][0])
 
@@ -726,6 +757,9 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
             #
             X_0 = layer(X_0)
             X = layer(X)
+
+            deltas = False
+            del X_delta, X_update
 
             if verbose:
                 print("B", layer, time.time() - tic)
@@ -787,15 +821,13 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
                 within_layer_timings.append(None)
                 print("E", layer, time.time() - tic)
 
-        if str(X_delta.device)[:4] == 'cuda':
-            torch.cuda.synchronize()
         layer_timings.append(time.time() - tic)
 
+    tt = time.time()
     if deltas == False:
         X_delta = X - X_0
         Xf = torch.sqrt(torch.sum(torch.square(X_delta), dim=(1, 2)))
         Xf = Xf.reshape(seq_lens[0][0], -1)
-
     else:
         ### Calculate ISM scores
         seq_len = seq_lens[0][0]
@@ -810,6 +842,8 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         Xf.T[masks[-1][1][1]] = X_ism[:, fl:seq_len-fr].T.flatten()
         Xf = torch.sqrt(torch.sum(Xf, axis=1))
         Xf = Xf.reshape(seq_len, -1)
+    print(time.time() - tt, "aaaa")
+    tt = time.time()
 
     if device[:4] == 'cuda':
         Xf = Xf.cpu()
@@ -821,4 +855,6 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         X_ism[i_idxs, j_idxs] = Xf[:, i-1]
     X_ism = X_ism.numpy()
     
+    print(time.time() - tt, "bbb")
+
     return X_ism, layer_timings, within_layer_timings
