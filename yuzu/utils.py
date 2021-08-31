@@ -6,6 +6,8 @@ This code contains utility functions that support the main functionality
 of the yuzu codebase.
 """
 
+import time
+
 import numpy
 import torch
 import itertools as it
@@ -33,18 +35,23 @@ def perturbations(X_0):
         Each single-position perturbation of seq.
     """
 
-    _, n_choices, seq_len = X_0.shape
-    idxs = X_0[0].argmax(axis=0)
+    n_seqs, n_choices, seq_len = X_0.shape
+    idxs = X_0.argmax(axis=1)
 
-    X = numpy.tile(X_0, reps=(seq_len*(n_choices-1), 1, 1))
-    for i in range(seq_len):
-        for j in range(1, n_choices):
-            idx = i*(n_choices-1) + (j-1)
+    X_0 = torch.from_numpy(X_0)
 
-            X[idx, idxs[i], i] = 0
-            X[idx, (idxs[i]+j) % n_choices, i] = 1
+    n = seq_len*(n_choices-1)
+    X = torch.tile(X_0, (n, 1, 1))
+    X = X.reshape(n, n_seqs, n_choices, seq_len).permute(1, 0, 2, 3)
+
+    for i in range(n_seqs):
+        for k in range(1, n_choices):
+            idx = numpy.arange(seq_len)*(n_choices-1) + (k-1)
+
+            X[i, idx, idxs[i], numpy.arange(seq_len)] = 0
+            X[i, idx, (idxs[i]+k) % n_choices, numpy.arange(seq_len)] = 1
         
-    return torch.from_numpy(X)
+    return X
 
 def delta_perturbations(X_0):
     """Produce the deltas of all edit-distance-one perturbations of a sequence.
@@ -55,21 +62,25 @@ def delta_perturbations(X_0):
 
     Parameters
     ----------
-    X_0: numpy.ndarray, shape=(1, n_choices, seq_len)
+    X_0: numpy.ndarray, shape=(n_seqs, n_choices, seq_len)
         A one-hot encoded sequence to generate all potential perturbations.
 
     Returns
     -------
-    X: torch.Tensor, shape=((n_choices-1)*seq_len, n_choices, seq_len)
+    X: torch.Tensor, shape=(n_seqs, (n_choices-1)*seq_len, n_choices, seq_len)
         Each single-position perturbation of seq.
     """
-    _, n_choices, seq_len = X_0.shape
-    idxs = X_0[0].argmax(axis=0)
-    X = numpy.zeros((n_choices-1, n_choices, seq_len), dtype='float32')
-    for i in range(seq_len):
-        for j in range(n_choices-1):
-            X[j, idxs[i], i] = -1
-            X[j, (idxs[i]+j+1) % n_choices, i] = 1
+
+    n_seqs, n_choices, seq_len = X_0.shape
+    idxs = X_0.argmax(axis=1)
+
+    X = numpy.zeros((n_seqs, n_choices-1, n_choices, seq_len), dtype='float32')
+
+    for i in range(n_seqs):
+        for k in range(n_choices-1):
+            X[i, k, idxs[i], numpy.arange(seq_len)] = -1
+            X[i, k, (idxs[i] + k + 1) % n_choices, numpy.arange(seq_len)] = 1
+
     return torch.from_numpy(X)
 
 def calculate_flanks(seq_len, receptive_field):

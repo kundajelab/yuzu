@@ -39,8 +39,8 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
         The saliency score for each perturbation.
     """
 
-    _, n_choices, seq_len = X_0.shape
-    idxs = X_0[0].argmax(axis=0)
+    n_seqs, n_choices, seq_len = X_0.shape
+    idxs = X_0.argmax(axis=1)
 
     X = perturbations(X_0)
     X_0 = torch.from_numpy(X_0)
@@ -51,30 +51,42 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
     if device[:4] != X_0.device:
         X_0 = X_0.to(device)
 
-    starts = numpy.arange(0, len(X), batch_size)
-    X_baseline = []
-    for start in starts:
-        X_ = X[start:start+batch_size]
-        
-        if device[:4] == 'cuda': 
-            X_ = X_.to(device)
-        
-        y = model(X_)
+    reference = model(X_0).unsqueeze(1)
 
-        X_baseline.append(y)
-        del X_
+    starts = numpy.arange(0, X.shape[1], batch_size)
+    isms = []
+    for i in range(n_seqs):
+        y = []
+        for start in starts:
+            X_ = X[i, start:start+batch_size]
+            if device[:4] == 'cuda': 
+                X_ = X_.to(device)
+            
+            y_ = model(X_)
+            y.append(y_)
+            del X_
 
-    X_baseline = torch.cat(X_baseline)
+        y = torch.cat(y)
 
-    reference = model(X_0)
+        ism = torch.square(y - reference[i]).sum(axis=-1)
+        if len(ism.shape) == 2:
+            ism = ism.sum(axis=-1)
+        ism = torch.sqrt(ism)
+        isms.append(ism)
 
-    ism = torch.square(X_baseline - reference)
-    ism = torch.sqrt(ism.sum(axis=(1, 2))).reshape(seq_len, n_choices-1)
+        if device[:4] == 'cuda':
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+
+    isms = torch.stack(isms)
+    isms = isms.reshape(n_seqs, seq_len, n_choices-1)
+
     if device[:4] == 'cuda':
-        ism = ism.cpu()
+        isms = isms.cpu()
 
-    X_ism = torch.zeros(n_choices, seq_len, device='cpu')
-    for i in range(1, n_choices):
-        X_ism[(idxs + i) % n_choices, numpy.arange(seq_len)] = ism[:, i-1]
+    X_ism = torch.zeros(n_seqs, n_choices, seq_len, device='cpu')
+    for i in range(n_seqs):
+        for j in range(1, n_choices):
+            X_ism[i, (idxs[i] + j) % n_choices, numpy.arange(seq_len)] = isms[i, :, j-1]
     X_ism = X_ism.numpy()
     return X_ism

@@ -28,7 +28,7 @@ class Unsqueeze(torch.nn.Module):
 
 
 class OneLayer(torch.nn.Module):
-	def __init__(self, n_inputs, n_filters=512, kernel_size=7, seq_len=None, random_state=0):
+	def __init__(self, n_inputs, n_filters=64, kernel_size=7, seq_len=None, random_state=0):
 		super(OneLayer, self).__init__()
 		torch.manual_seed(random_state)
 		self.conv = torch.nn.Conv1d(n_inputs, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
@@ -37,8 +37,9 @@ class OneLayer(torch.nn.Module):
 		with torch.no_grad():
 			return self.conv(X)
 
+'''
 class ToyNet(torch.nn.Module):
-	def __init__(self, n_inputs, n_filters=512, kernel_size=7, seq_len=None, random_state=0):
+	def __init__(self, n_inputs, n_filters=32, kernel_size=7, seq_len=None, random_state=0):
 		super(ToyNet, self).__init__()
 		torch.manual_seed(random_state)
 		self.conv1 = torch.nn.Conv1d(n_inputs, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
@@ -50,6 +51,34 @@ class ToyNet(torch.nn.Module):
 	def forward(self, X):
 		with torch.no_grad():
 			return self.conv3(self.relu2(self.conv2(self.relu1(self.conv1(X)))))
+'''
+
+class ToyNet(torch.nn.Module):
+	def __init__(self, n_inputs, n_filters=32, kernel_size=7, seq_len=None, random_state=0):
+		super(ToyNet, self).__init__()
+		torch.manual_seed(random_state)
+		self.conv1 = torch.nn.Conv1d(n_inputs, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
+		self.relu1 = torch.nn.ReLU()
+		#self.mp1 = torch.nn.MaxPool1d(3)
+		self.conv2 = torch.nn.Conv1d(n_filters, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
+		self.relu2 = torch.nn.ReLU()
+		#self.mp2 = torch.nn.MaxPool1d(3)
+		self.conv3 = torch.nn.Conv1d(n_filters, 1, kernel_size=kernel_size, padding=kernel_size // 2)
+		self.relu3 = torch.nn.ReLU()
+		#self.mp3 = torch.nn.MaxPool1d(3)
+		#self.reshape = Flatten()
+		#self.fc1 = torch.nn.Linear(seq_len, 100)
+
+
+	def forward(self, X):
+		with torch.no_grad():
+			X = self.relu1(self.conv1(X))
+			X = self.relu2(self.conv2(X))
+			X = self.relu3(self.conv3(X))
+			#X = self.reshape(X)
+			#X = self.fc1(X)
+			return X
+
 
 class DeepSEA(torch.nn.Module):
 	def __init__(self, n_inputs, seq_len=None, random_state=0):
