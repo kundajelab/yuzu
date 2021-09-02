@@ -40,7 +40,7 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
     """
 
     n_seqs, n_choices, seq_len = X_0.shape
-    idxs = X_0.argmax(axis=1)
+    X_idxs = X_0.argmax(axis=1)
 
     X = perturbations(X_0)
     X_0 = torch.from_numpy(X_0)
@@ -81,12 +81,16 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
     isms = torch.stack(isms)
     isms = isms.reshape(n_seqs, seq_len, n_choices-1)
 
-    if device[:4] == 'cuda':
-        isms = isms.cpu()
+    j_idxs = torch.arange(n_seqs*seq_len)
+    X_ism = torch.zeros(n_seqs*seq_len, n_choices, device=device)
+    for i in range(1, n_choices):
+        i_idxs = (X_idxs.flatten() + i) % n_choices
+        X_ism[j_idxs, i_idxs] = isms[:, :, i-1].flatten()
 
-    X_ism = torch.zeros(n_seqs, n_choices, seq_len, device='cpu')
-    for i in range(n_seqs):
-        for j in range(1, n_choices):
-            X_ism[i, (idxs[i] + j) % n_choices, numpy.arange(seq_len)] = isms[i, :, j-1]
+    X_ism = X_ism.reshape(n_seqs, seq_len, n_choices).permute(0, 2, 1)
+
+    if device[:4] == 'cuda':
+        X_ism = X_ism.cpu()
+
     X_ism = X_ism.numpy()
     return X_ism

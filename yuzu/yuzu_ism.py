@@ -402,6 +402,9 @@ def _compressed_sensing_convolution(layer, X_delta, A, beta, mask,
         overall_tic = time.time()
         tic = time.time()
 
+    bias = torch.clone(layer.bias[:])
+    layer.bias[:] = 0
+
     n_seqs, n_nonzero, in_filters, seq_len = X_delta.shape
 
     # Construct the probes using the sparse contributions
@@ -434,6 +437,8 @@ def _compressed_sensing_convolution(layer, X_delta, A, beta, mask,
         if device == 'cuda': torch.cuda.synchronize()
         final_tic = time.time() - overall_tic
         print("A:{:3.3}\tB:{:3.3}\tC:{:3.3}\tTot:{:3.3}\t".format(tic_a, tic_b, tic_c, final_tic))
+
+    layer.bias[:] = bias
 
     if return_timings == True:
         t = tic_a, tic_b, tic_c, final_tic
@@ -486,27 +491,19 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
         part of the `precompute` function.
     """
 
-    print("IN: ", X_0.shape, X_delta.shape)
-
     n_seqs, n_filters, _ = X_0.shape
     device = str(X_delta.device)
-
-    print("A", n_perturbs, n_seqs)
 
     seq_len0, seq_len1 = seq_lens
     rf0, rf1 = receptive_fields
     fl0, fr0, idxs0 = calculate_flanks(seq_len0, rf0)
     fl1, fr1, idxs1 = calculate_flanks(seq_len1, rf1)
 
-    print("B")
-
     ks = layer.kernel_size
     size = int((numpy.ceil(rf0 / ks) + 1) * ks)
     step = (n_nonzeros[0] // rf0) * ks
 
     offset = n_nonzeros[0] - fl0 * n_nonzeros[0] // rf0 
-
-    print("C", ks, size, step, offset)
 
     ##
 
@@ -519,21 +516,15 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
         row_mask0, col_mask0 = row_mask0.cpu(), col_mask0.cpu()
         row_mask1, col_mask1 = row_mask1.cpu(), col_mask1.cpu()
 
-    print("D")
-
     row_mask00 = row_mask0 - mask_map[col_mask0]
     row_mask10 = row_mask1 - mask_map2[col_mask1]
 
     rows = torch.repeat_interleave(torch.arange(n_perturbs), size)
     rows = rows.reshape(n_perturbs, size)
-    
-    print("E")
 
     t_min = torch.tensor(seq_len0-1).expand(n_perturbs, size)
     cols = torch.tile(torch.arange(size), dims=(n_perturbs, 1))
     cols = torch.minimum((cols.T + mask_map[rows[:,0]]).T, t_min)
-
-    print("F")
 
     ##
 
@@ -544,25 +535,13 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     X1 = X1[(rows, cols)].permute(1, 0, 2, 3)
     #X1 = X1.reshape(X1.shape[0]*X1.shape[1], X1.shape[2], X1.shape[3])
 
-    print("G")
-
     for j, idx in enumerate(idxs0):
         r = masks[0][0][j]
         if device[:4] == 'cuda':
             r = r.cpu()
 
         c = torch.full_like(r, idx) - mask_map[r]
-
-        print(j, idx)
-        print(r)
-        print(c)
-
-        torch.cuda.synchronize()
-
         X1[(c, r)] += X_delta[:, :len(r), :, idx].permute(1, 0, 2)
-        print("nkjhnakhas")         
-
-    print("H")
 
     X_update = X_delta[:, :, :, fl0:seq_len0-fr0]
 
@@ -576,13 +555,10 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
     ##
 
-    print(X_0.shape)
-
     X_0 = layer(X_0)
     # .permute(2, 0, 1)
     X_1 = X_0.unsqueeze(1).expand(-1, n_perturbs, -1, -1).permute(3, 1, 0, 2)
 
-    print(X1.shape)
     # .permute(2, 0, 1)
     X1 = layer(X1)
     X1 = X1.reshape(n_seqs, n_perturbs, n_filters, -1).permute(3, 1, 0, 2)
@@ -604,8 +580,6 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
     X_delta = X_delta.permute(2, 0, 3, 1).contiguous()
     del X_update, X1, rows, cols
-
-    print("OUT: ", X_0.shape, X_delta.shape)
     return X_0, X_delta
 
 
@@ -763,8 +737,8 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
             fl, fr, idxs = calculate_flanks(seq_len, receptive_fields[i][0])
 
             n_out = layer.weight.shape[0]
-            weight = layer.weight.reshape(n_out, n_filters, seq_len)
-            weight = weight.permute(2, 1, 0).contiguous()
+            weight = layer.weight.reshape(n_out, seq_len, n_filters)
+            weight = weight.permute(1, 2, 0).contiguous()
 
             # .permute(2, 0, 1)
             X_delta = X_delta.permute(0, 3, 1, 2).contiguous()
@@ -829,13 +803,12 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         # and the layer is a type that can be quickly processed using
         # compressed sensing then use the Yuzu-ISM procedure
         elif isinstance(layer, use_layers):
+            X_0 = layer(X_0)
             X_delta = _compressed_sensing_convolution(layer=layer,
                 X_delta=X_delta, A=As[i], beta=betas[i], mask=masks[i], 
                 n_probes=n_probess[i], 
                 return_timings=verbose, 
                 verbose=verbose)
-
-            X_0 = layer(X_0)
 
             if verbose:
                 within_layer_times = X_delta[1]
@@ -867,7 +840,6 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         layer_timings.append(time.time() - tic)
 
     if deltas == False:
-        print(X.shape, X_0.shape)
         Xfs = torch.square(X - X_0.unsqueeze(1)).sum(axis=-1)
 
         if len(Xfs.shape) == 3:
@@ -882,8 +854,6 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
 
         X_ism = torch.sum(torch.square(X_delta), dim=2)
         Xfs = torch.zeros(n_seqs, n_perturbs, device=device)
-
-        print(X_delta.shape, X_ism.shape, Xfs.shape)
 
         X_ism_ = X_ism[:, :, fl:seq_len-fr]
         X_ism_ = X_ism_.permute(0, 2, 1).reshape(n_seqs, -1)
