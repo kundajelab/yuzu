@@ -28,7 +28,7 @@ class Unsqueeze(torch.nn.Module):
 
 
 class OneLayer(torch.nn.Module):
-	def __init__(self, n_inputs, n_filters=512, kernel_size=7, seq_len=None, random_state=0):
+	def __init__(self, n_inputs, n_filters=64, kernel_size=7, seq_len=None, random_state=0):
 		super(OneLayer, self).__init__()
 		torch.manual_seed(random_state)
 		self.conv = torch.nn.Conv1d(n_inputs, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
@@ -38,7 +38,7 @@ class OneLayer(torch.nn.Module):
 			return self.conv(X)
 
 class ToyNet(torch.nn.Module):
-	def __init__(self, n_inputs, n_filters=512, kernel_size=7, seq_len=None, random_state=0):
+	def __init__(self, n_inputs, n_filters=32, kernel_size=7, seq_len=None, random_state=0):
 		super(ToyNet, self).__init__()
 		torch.manual_seed(random_state)
 		self.conv1 = torch.nn.Conv1d(n_inputs, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
