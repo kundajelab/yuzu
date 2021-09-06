@@ -15,7 +15,7 @@ from .models import Flatten
 from .utils import calculate_flanks
 from .utils import perturbations
 
-global use_layers, ignore_layers, 
+global use_layers, ignore_layers
 use_layers = torch.nn.Conv1d, torch.nn.MaxPool1d, torch.nn.AvgPool1d
 ignore_layers = torch.nn.ReLU, torch.nn.BatchNorm1d, torch.nn.LogSoftmax
 
