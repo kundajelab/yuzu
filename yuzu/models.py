@@ -45,7 +45,7 @@ class ToyNet(torch.nn.Module):
 		self.relu1 = torch.nn.ReLU()
 		self.conv2 = torch.nn.Conv1d(n_filters, n_filters, kernel_size=kernel_size, padding=kernel_size // 2)
 		self.relu2 = torch.nn.ReLU()
-		self.conv3 = torch.nn.Conv1d(n_filters, 1, kernel_size=kernel_size, padding=kernel_size // 2)
+		self.conv3 = torch.nn.Conv1d(n_filters, 2, kernel_size=kernel_size, padding=kernel_size // 2)
 
 	def forward(self, X):
 		with torch.no_grad():

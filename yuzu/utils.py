@@ -175,7 +175,7 @@ def tensorflow_to_pytorch(tf_model, torch_model):
                 bias = numpy.array(tf_model.layers[i].weights[1])
 
                 model2_layers[j].weight[:] = torch.tensor(weight)
-                model2_layers[j].bias[:] = torch.tensor(bias) + torch.randn(bias.shape[0])
+                model2_layers[j].bias[:] = torch.tensor(bias)
 
             elif isinstance(tf_model.layers[i], tf_use_layers[1]):
                 mu = numpy.array(tf_model.layers[i].weights[2])
