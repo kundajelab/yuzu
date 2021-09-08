@@ -13,6 +13,7 @@ import torch
 from .models import Flatten
 from .models import Unsqueeze
 
+from .utils import safe_to_device
 from .utils import calculate_flanks
 from .utils import delta_perturbations
 
@@ -192,11 +193,10 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     mask_map = numpy.maximum(numpy.arange(n_perturbs) - offset, 0) // step * ks
     mask_map2 = numpy.maximum(numpy.arange(n_perturbs) - offset, 0) // step
 
-    row_mask0, col_mask0 = masks[0][1]
-    row_mask1, col_mask1 = masks[1][1]
-    if device[:4] == 'cuda':
-        row_mask0, col_mask0 = row_mask0.cpu(), col_mask0.cpu()
-        row_mask1, col_mask1 = row_mask1.cpu(), col_mask1.cpu()
+    row_mask0 = safe_to_device(masks[0][1][0], 'cpu')
+    col_mask0 = safe_to_device(masks[0][1][1], 'cpu')
+    row_mask1 = safe_to_device(masks[1][1][0], 'cpu')
+    col_mask1 = safe_to_device(masks[1][1][1], 'cpu')
 
     row_mask00 = row_mask0 - mask_map[col_mask0]
     row_mask10 = row_mask1 - mask_map2[col_mask1]
@@ -218,10 +218,7 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     #X1 = X1.reshape(X1.shape[0]*X1.shape[1], X1.shape[2], X1.shape[3])
 
     for j, idx in enumerate(idxs0):
-        r = masks[0][0][j]
-        if device[:4] == 'cuda':
-            r = r.cpu()
-
+        r = safe_to_device(masks[0][0][j], "cpu")
         c = torch.full_like(r, idx) - mask_map[r]
         X1[(c, r)] += X_delta[:, :len(r), :, idx].permute(1, 0, 2)
 
@@ -253,10 +250,7 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     X_delta[:, fl1:seq_len1-fr1] = X_delta_
 
     for j, idx in enumerate(idxs1):
-        r = masks[1][0][j]
-        if device[:4] == 'cuda':
-            r = r.cpu()
-
+        r = safe_to_device(masks[1][0][j], "cpu")
         c = torch.full_like(r, idx) - mask_map2[r]
         X_delta[:len(r), idx] = X1[(c, r)] - X_0[:, :, idx].unsqueeze(0)
 
@@ -267,8 +261,7 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
 
 
 @torch.no_grad()
-def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields, 
-    n_probess, seq_lens, n_nonzeros, device='cpu', use_layers=use_layers, 
+def _yuzu_ism(model, X_0, precomputation, device='cpu', use_layers=use_layers, 
     ignore_layers=ignore_layers, terminal_layers=terminal_layers, verbose=False):
     """Perform ISM using compressed sensing to reduce the necessary compute.
 
@@ -296,49 +289,21 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         A tensor containing the reference sequence that ISM is being
         performed on.
 
-    X: torch.Tensor, shape=(n, n_filters, seq_len)
-        A tensor containing all of the mutations that are being considered
-        for ISM. In our setting, each filter is a different nucleotide
-        or amino acid and each position is being mutated to each other
-        choice, making `n` usually (n_filters-1)*seq_len. However, `n`
-        can be any number of sequences.
+    precomputation: yuzu.Precomputation
+        An object containing the precomputation performed using the
+        `yuzu.precompute` function.
 
-    As: list of torch.Tensor, shape=(n_probes, n)
-        A list of tensors containing the random Gaussian values for the 
-        sensing matrix that compresses the sequences into probes. Each
-        layer in the model that can be sped up using this approach has
-        a different A tensor. This list of tensors is precomputed as
-        part of the `precompute` function.
+    use_layers: tuple, optional
+        The layer classes to apply compressed sensing to.
 
-    betas: list of torch.Tensor
-        A list of tensor containing slices of the A matrix that are
-        ready to be used to solve a regression task. This list of
-        tensors is precomputed as part of the `precompute` function.
+    ignore_layers: tuple, optional
+        The layer classes to ignore when iterating through the layers.
 
-    masks: list of torch.Tensor 
-        A list of tensors containing a mask of the receptive field
-        for each example. This mask is empirically derived by running
-        the examples through the network and recording where positions
-        change with respect to the reference. This list of tensors is
-        precomputed as part of the `precompute` function.
-
-    receptive_fields: list of ints or None
-        A list of values showing the maximum receptive field size for
-        each layer. The receptive field is the span from the left-most
-        sequence position to the right-most sequence position that are
-        changed in the given sequences, even if some of the internal
-        positions are not changed. This list of values is precomputed
-        as part of the `precompute` function.
-
-    n_probess: list of ints or None
-        A list of values showing the number of probes to construct
-        for each layer that is being compressed. This list of values
-        is precomputed as part of the `precompute` function.
-
-    use_layers: tuple
-        The layer classes to apply compressed sensing to. All layers
-        that are not a part of this class are passed through.
-
+    terminal_layers: tuple, optional
+        The layer classes that, when encountered, cause the method to stop
+        making calculations with the deltas. The calculations will return
+        to the original space and layers will be applied normally from
+        this point.
 
     verbose: bool, optional
         Whether to print out statements showing timings and the progression
@@ -351,8 +316,6 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         as if one had simply run `model(X)`. 
     """
 
-    tic = time.time()
-
     layer_timings, within_layer_timings = [], []
 
     n_seqs, n_choices, seq_len = X_0.shape
@@ -361,25 +324,18 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
     X_delta = delta_perturbations(X_0)
     X_0 = torch.from_numpy(X_0)
 
-    tic = time.time()
-    if device[:4] != str(next(model.parameters()).device):
-        model = model.to(device)
-
-    if device[:4] != X_delta.device:
-        X_delta = X_delta.to(device)
-
-    if device[:4] != X_0.device:
-        X_0 = X_0.to(device)
+    model = safe_to_device(model, device)
+    X_delta = safe_to_device(X_delta, device)
+    X_0 = safe_to_device(X_0, device)
 
     n_perturbs = X_delta.shape[1] * X_delta.shape[-1]
     _, n_nonzero, in_filters, seq_len = X_delta.shape
     deltas = True
 
-    #print("BEFORE TIME: {}".format(time.time() - tic))
-
     for i, layer in enumerate(model.children()):
         tic = time.time()
         within_layer_times = None
+        n_probes = precomputation.n_probes[i]
 
         # If it is not computationally efficient to use deltas and the deltas 
         # have already been decoded back to the full sequences, simply pass
@@ -416,7 +372,8 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
             X = torch.tile(X_0.unsqueeze(1), (1, n_perturbs, 1))
 
             _, _, n_filters, seq_len = X_delta.shape 
-            fl, fr, idxs = calculate_flanks(seq_len, receptive_fields[i][0])
+            fl, fr, idxs = calculate_flanks(seq_len, 
+                precomputation.receptive_fields[i][0])
 
             n_out = layer.weight.shape[0]
             weight = layer.weight.reshape(n_out, seq_len, n_filters)
@@ -426,11 +383,12 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
             X_delta = X_delta.permute(0, 3, 1, 2).contiguous()
             X_update = torch.matmul(X_delta, weight)
 
-            mask = masks[i][0][1][1].expand(n_seqs, n_out, -1).permute(0, 2, 1)
+            mask = precomputation.masks[i][0][1][1]
+            mask = mask.expand(n_seqs, n_out, -1).permute(0, 2, 1)
             X.scatter_add_(1, mask, X_update[:, fl:seq_len-fr].reshape(n_seqs, -1, n_out))
 
             for j, idx in enumerate(idxs):
-                m = masks[i][0][0][j]
+                m = precomputation.masks[i][0][0][j]
                 X[:, m] += X_update[:, idx, :len(m)]
 
             deltas = False
@@ -444,25 +402,31 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         # deltas can't be used anymore, decode the full sequences from the deltas and
         # pass them through the next layer.
         # X_dense -> X
-        elif n_probess[i] > n_perturbs or isinstance(layer, terminal_layers):
-            seq_len = seq_lens[i][0]
-            fl, fr, idxs = calculate_flanks(seq_len, receptive_fields[i][0])
+        elif n_probes > n_perturbs or isinstance(layer, terminal_layers):
+            _, n_filters, seq_len = X_0.shape
+            fl, fr, idxs = calculate_flanks(seq_len, 
+                precomputation.receptive_fields[i][0])
 
-            X = torch.tile(X_0, dims=(n_perturbs, 1, 1))
+            X = torch.tile(X_0.unsqueeze(1), dims=(1, n_perturbs, 1, 1))
 
             for j, idx in enumerate(idxs):
-                m = masks[i][0][0][j]
-                X[m, :, idx] += X_delta[:len(m), :, idx]
+                m = precomputation.masks[i][0][0][j]
+                X[:, m, :, idx] += X_delta[:, :len(m), :, idx]
 
-            X_update = X_delta[:, :, fl:seq_len-fr].permute(2, 0, 1)
+            X_update = X_delta[:, :, :, fl:seq_len-fr].permute(3, 1, 0, 2)
+            mask = precomputation.masks[i][0][1]
 
-            X = X.permute(2, 0, 1)
-            X[masks[i][0][1]] += X_update.reshape(-1, X_update.shape[2])
-            X = X.permute(1, 2, 0)
+            X = X.permute(3, 1, 0, 2)
+            X[mask] += X_update.reshape(-1, n_seqs, n_filters)
+            X = X.permute(2, 1, 3, 0)
+            X = X.reshape(n_seqs*n_perturbs, n_filters, seq_len)
 
             #
             X_0 = layer(X_0)
             X = layer(X)
+
+            _, n_filters, seq_len = X.shape
+            X = X.reshape(n_seqs, n_perturbs, n_filters, seq_len) 
 
             deltas = False
             del X_delta, X_update
@@ -474,9 +438,14 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         # layer, decode the full sequences from the deltas, pass them through
         # the max pooling layer, and recover the deltas on the other side.
         elif isinstance(layer, torch.nn.MaxPool1d):
-            X_0, X_delta = _delta_pooling(layer, X_0, X_delta, masks[i], 
-                receptive_fields[i], n_probess[i], seq_lens[i], 
-                n_nonzeros[i], n_perturbs)
+            X_0, X_delta = _delta_pooling(layer=layer, 
+                X_0=X_0, X_delta=X_delta, 
+                masks=precomputation.masks[i], 
+                receptive_fields=precomputation.receptive_fields[i], 
+                n_probes=precomputation.n_probes[i], 
+                seq_lens=precomputation.seq_lens[i], 
+                n_nonzeros=precomputation.n_nonzeros[i], 
+                n_perturbs=n_perturbs)
 
             if verbose:
                 print("M", layer, time.time() - tic)
@@ -487,8 +456,10 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         elif isinstance(layer, use_layers):
             X_0 = layer(X_0)
             X_delta = _compressed_sensing_convolution(layer=layer,
-                X_delta=X_delta, A=As[i], beta=betas[i], mask=masks[i], 
-                n_probes=n_probess[i], 
+                X_delta=X_delta, A=precomputation.As[i], 
+                beta=precomputation.betas[i], 
+                mask=precomputation.masks[i], 
+                n_probes=precomputation.n_probes[i], 
                 return_timings=verbose, 
                 verbose=verbose)
 
@@ -515,40 +486,40 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
             if verbose:
                 print("E", layer, time.time() - tic)
 
-        if device[:4] == 'cuda':
-            torch.cuda.synchronize()
-
         within_layer_timings.append(within_layer_times)
         layer_timings.append(time.time() - tic)
 
     if deltas == False:
-        Xfs = torch.square(X - X_0.unsqueeze(1)).sum(axis=-1)
+        seq_len = precomputation.seq_lens[0][0]
 
+        Xfs = torch.square(X - X_0.unsqueeze(1)).sum(axis=-1)
         if len(Xfs.shape) == 3:
             Xfs = torch.sum(Xfs, axis=-1)
-
-        Xfs = torch.sqrt(Xfs).reshape(n_seqs, seq_lens[0][0], n_choices-1)
+        Xfs = torch.sqrt(Xfs).reshape(n_seqs, seq_len, n_choices-1)
 
     else:
         ### Calculate ISM scores
-        seq_len = seq_lens[-1][1]
-        fl, fr, idxs = calculate_flanks(seq_len, receptive_fields[-1][1])
+        seq_len = precomputation.seq_lens[-1][1]
+        fl, fr, idxs = calculate_flanks(seq_len, 
+            precomputation.receptive_fields[-1][1])
 
         X_ism = torch.sum(torch.square(X_delta), dim=2)
         Xfs = torch.zeros(n_seqs, n_perturbs, device=device)
 
+        mask = precomputation.masks[-1][1][1][1]
         X_ism_ = X_ism[:, :, fl:seq_len-fr]
         X_ism_ = X_ism_.permute(0, 2, 1).reshape(n_seqs, -1)
-        Xfs.scatter_add_(1, masks[-1][1][1][1].expand(n_seqs, -1), X_ism_)
+        Xfs.scatter_add_(1, mask.expand(n_seqs, -1), X_ism_)
 
         for i, idx in enumerate(idxs):
-            m = masks[-1][1][0][i]
+            m = precomputation.masks[-1][1][0][i]
             Xfs[:, m] += X_ism[:, :len(m), idx]
 
+        seq_len = precomputation.seq_lens[0][0]
         Xfs = torch.sqrt(Xfs)
-        Xfs = Xfs.reshape(n_seqs, seq_lens[0][0], n_choices-1)
+        Xfs = Xfs.reshape(n_seqs, seq_len, n_choices-1)
 
-    seq_len = seq_lens[0][0]
+    seq_len = precomputation.seq_lens[0][0]
     j_idxs = torch.arange(n_seqs*seq_len)
     X_ism = torch.zeros(n_seqs*seq_len, n_choices, device=device)
     for i in range(1, n_choices):
@@ -556,17 +527,12 @@ def _yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         X_ism[j_idxs, i_idxs] = Xfs[:, :, i-1].flatten()
 
     X_ism = X_ism.reshape(n_seqs, seq_len, n_choices).permute(0, 2, 1)
-
-    if device[:4] == 'cuda':
-        X_ism = X_ism.cpu()
-
-    X_ism = X_ism.numpy()
+    X_ism = safe_to_device(X_ism, "cpu").numpy()
 
     #print("AFTER TIME: {:4.4} {:4.4} {:4.4}".format(time.time() - tic, toc - tic, time.time() - toc))
     return X_ism, layer_timings, within_layer_timings
 
-def yuzu_ism(model, X_0, As, betas, masks, receptive_fields, 
-    n_probess, seq_lens, n_nonzeros, batch_size=1, device='cpu', 
+def yuzu_ism(model, X_0, precomputation, batch_size=1, device='cpu', 
     use_layers=use_layers, ignore_layers=ignore_layers, 
     terminal_layers=terminal_layers, verbose=False):
     """Perform ISM using compressed sensing to reduce the necessary compute.
@@ -595,49 +561,24 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
         A tensor containing the reference sequence that ISM is being
         performed on.
 
-    X: torch.Tensor, shape=(n, n_filters, seq_len)
-        A tensor containing all of the mutations that are being considered
-        for ISM. In our setting, each filter is a different nucleotide
-        or amino acid and each position is being mutated to each other
-        choice, making `n` usually (n_filters-1)*seq_len. However, `n`
-        can be any number of sequences.
+    precomputation: yuzu.Precomputation
+        An object containing the precomputation performed using the
+        `yuzu.precompute` function.
 
-    As: list of torch.Tensor, shape=(n_probes, n)
-        A list of tensors containing the random Gaussian values for the 
-        sensing matrix that compresses the sequences into probes. Each
-        layer in the model that can be sped up using this approach has
-        a different A tensor. This list of tensors is precomputed as
-        part of the `precompute` function.
+    batch_size: int, optional
+        The number of sequences to decode at the same time. Default is 1.
 
-    betas: list of torch.Tensor
-        A list of tensor containing slices of the A matrix that are
-        ready to be used to solve a regression task. This list of
-        tensors is precomputed as part of the `precompute` function.
+    use_layers: tuple, optional
+        The layer classes to apply compressed sensing to.
 
-    masks: list of torch.Tensor 
-        A list of tensors containing a mask of the receptive field
-        for each example. This mask is empirically derived by running
-        the examples through the network and recording where positions
-        change with respect to the reference. This list of tensors is
-        precomputed as part of the `precompute` function.
+    ignore_layers: tuple, optional
+        The layer classes to ignore when iterating through the layers.
 
-    receptive_fields: list of ints or None
-        A list of values showing the maximum receptive field size for
-        each layer. The receptive field is the span from the left-most
-        sequence position to the right-most sequence position that are
-        changed in the given sequences, even if some of the internal
-        positions are not changed. This list of values is precomputed
-        as part of the `precompute` function.
-
-    n_probess: list of ints or None
-        A list of values showing the number of probes to construct
-        for each layer that is being compressed. This list of values
-        is precomputed as part of the `precompute` function.
-
-    use_layers: tuple
-        The layer classes to apply compressed sensing to. All layers
-        that are not a part of this class are passed through.
-
+    terminal_layers: tuple, optional
+        The layer classes that, when encountered, cause the method to stop
+        making calculations with the deltas. The calculations will return
+        to the original space and layers will be applied normally from
+        this point.
 
     verbose: bool, optional
         Whether to print out statements showing timings and the progression
@@ -656,17 +597,12 @@ def yuzu_ism(model, X_0, As, betas, masks, receptive_fields,
     for start in starts:
         X = X_0[start:start+batch_size]
         X_ism_, layer_timings_, within_layer_timings_ = _yuzu_ism(model=model, 
-            X_0=X, As=As, betas=betas, masks=masks, 
-            receptive_fields=receptive_fields, n_probess=n_probess, 
-            seq_lens=seq_lens, n_nonzeros=n_nonzeros, device=device,
+            X_0=X, precomputation=precomputation, device=device,
             use_layers=use_layers, ignore_layers=ignore_layers, 
             terminal_layers=terminal_layers, verbose=verbose)
 
         X_ism.append(X_ism_)
         layer_timings.append(layer_timings_)
         within_layer_timings.append(within_layer_timings_)
-
-    if device[:4] == 'cuda':
-        torch.cuda.synchronize()
 
     return numpy.vstack(X_ism), layer_timings, within_layer_timings

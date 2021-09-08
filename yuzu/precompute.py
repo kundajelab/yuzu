@@ -7,6 +7,7 @@ as well as the class that stores the statistics and allows them to be easily
 saved and retrieved.
 """
 
+import numpy
 import pickle
 import torch
 import random
@@ -20,7 +21,7 @@ use_layers = torch.nn.Conv1d, torch.nn.MaxPool1d, torch.nn.AvgPool1d
 ignore_layers = torch.nn.ReLU, torch.nn.BatchNorm1d, torch.nn.LogSoftmax
 
 
-class Statistics(object):
+class Precomputation(object):
     """A container for all of the precomputed statistics for Yuzu.
 
     This object will store all the statistics that are calculated during the
@@ -79,33 +80,28 @@ class Statistics(object):
     """
 
     def __init__(self, As, betas, masks, receptive_fields, n_probes,
-        seq_lens, n_nonzeroes, device):
+        seq_lens, n_nonzeros):
         self.As = As
         self.betas = betas
         self.masks = masks
         self.receptive_fields = receptive_fields
         self.n_probes = n_probes
         self.seq_lens = seq_lens
-        self.n_nonzeroes = n_nonzeroes
-        self.device = device
-
+        self.n_nonzeros = n_nonzeros
 
     def save(self, filename):
-        args = {
-            'As': self.As.cpu().numpy(),
-            'betas': self.betas.cpu().numpy(),
-            'masks': self.masks.cpu().numpy(),
+        with open(filename, "w") as outfile:
+            pickle.dump(self, outfile)
 
-        }
+    @classmethod
+    def load(self, filename, device):
+        with open(filename, "r") as infile:
+            stats = pickle.load(infile)
 
-        numpy.savez_compresed(filename, )
-
-
-
-
+        return stats
 
 @torch.no_grad()
-def precompute(model, X_0, alpha=2, use_layers=use_layers, 
+def precompute(model, seq_len, n_choices=4, alpha=1.5, use_layers=use_layers, 
     ignore_layers=ignore_layers, device='cpu', random_state=None, 
     verbose=False):
     """Precomputing properties of the model for a Yuzu-ISM run.
@@ -129,20 +125,16 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
         layer in the forward function, such as reshaping or applying
         activation functions. See `models.py` for examples.
 
-    X_0: torch.Tensor, shape=(1, n_filters, seq_len)
-        A tensor containing the reference sequence that ISM is being
-        performed on.
+    seq_len: int
+        The length of the sequences to operate on.
 
-    X: torch.Tensor, shape=(n, n_filters, seq_len)
-        A tensor containing all of the mutations that are being considered
-        for ISM. In our setting, each filter is a different nucleotide
-        or amino acid and each position is being mutated to each other
-        choice, making `n` usually (n_filters-1)*seq_len. However, `n`
-        can be any number of sequences.
+    n_choices: int, optional
+        The number of categories in the input sequence. This should be 4 for
+        DNA and 20 for protein inputs.
 
     alpha: float, optional
         A multiplier on the number of nonzero values per position to specify
-        the number of probes. Default is 2.
+        the number of probes. Default is 1.5.
 
     use_layers: tuple
         A tuple of the layers that the compressed sensing algorithm should
@@ -154,6 +146,9 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
         cause trouble in determining the mask when paired with max pooling layers.
         Default is an empty tuple.
 
+    device: str, either 'cpu' or 'cuda', optional
+        The device to save the operations to, in terms of PyTorch contexts.
+
     random_state: int or None, optional
         The seed to use for the random state. Use None for no random
         seed to be set. Default is None.
@@ -164,52 +159,8 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
 
     Returns
     -------
-    As: list of torch.Tensor, shape=(n_probes, n)
-        A list of tensors containing the random Gaussian values for the 
-        sensing matrix that compresses the sequences into probes. Each
-        layer in the model that can be sped up using this approach has
-        a different A tensor. This list of tensors is precomputed as
-        part of the `precompute` function.
-
-    betas: list of torch.Tensor
-        A list of tensor containing slices of the A matrix that are
-        ready to be used to solve a regression task. This list of
-        tensors is precomputed as part of the `precompute` function.
-
-    masks: list of tuples of torch.Tensor 
-        A list of tuples of tensors containing a mask of the receptive field
-        for each example. This mask is empirically derived by running
-        the examples through the network and recording where positions
-        change with respect to the reference. The first tuple contains the 
-        mask before the layer is applied and the second tuple contains the 
-        mask after the layer is applied. Within those tuples, the first
-        item is a list of the masks applied to the edges of the sequence
-        and the second item is a mask to be applied to the middle of the
-        sequence.
-
-    receptive_fields: list of tuple of ints or None
-        A list of tuples of integers showing the maximum receptive field
-        size for each layer before (first element) and after (second element)
-        applying each layer. The receptive field is the span from the left-most
-        sequence position to the right-most sequence position that are
-        changed in the given sequences, even if some of the internal
-        positions are not changed. This list of values is precomputed
-        as part of the `precompute` function.
-
-    n_probess: list of ints or None
-        A list of values showing the number of probes to construct
-        for each layer that is being compressed. This list of values
-        is precomputed as part of the `precompute` function.
-
-    seq_lens: list of tuples of ints
-        A list of tuples showing the length of the sequence before
-        applying the layer (first element) and after applying the layer
-        (second element).
-
-    n_nonzeros: list of tuples of ints
-        A list of tuples showing the maximum number of nonzero elements per
-        column before applying the layer (first element) and after applying the
-        layer (second element).
+    precomputation: yuzu.precompute.Precomputation
+        An object storing all the precomputation statistics.
     """
 
     if random_state is not None:
@@ -218,6 +169,10 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
 
     As, betas, masks, receptive_fields, = [], [], [], []
     n_probess, seq_lens, n_nonzeros = [], [], []
+
+    idxs = numpy.random.RandomState(0).randn(n_choices, seq_len).argmax(axis=0)
+    X_0 = numpy.zeros((1, n_choices, seq_len), dtype='float32')
+    X_0[0, idxs, numpy.arange(seq_len)] = 1
 
     X = perturbations(X_0)[0]
     X_0 = torch.from_numpy(X_0)
@@ -417,4 +372,12 @@ def precompute(model, X_0, alpha=2, use_layers=use_layers,
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
 
-    return As, betas, masks, receptive_fields, n_probess, seq_lens, n_nonzeros
+    precomputation = Precomputation(As=As,
+        betas=betas,
+        masks=masks,
+        receptive_fields=receptive_fields,
+        n_probes=n_probess,
+        seq_lens=seq_lens,
+        n_nonzeros=n_nonzeros)
+
+    return precomputation

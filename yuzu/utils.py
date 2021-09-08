@@ -26,14 +26,20 @@ def perturbations(X_0):
 
     Parameters
     ----------
-    X_0: numpy.ndarray, shape=(1, n_choices, seq_len)
+    X_0: numpy.ndarray, shape=(n_seqs, n_choices, seq_len)
         A one-hot encoded sequence to generate all potential perturbations.
 
     Returns
     -------
-    X: torch.Tensor, shape=((n_choices-1)*seq_len, n_choices, seq_len)
+    X: torch.Tensor, shape=(n_seqs, (n_choices-1)*seq_len, n_choices, seq_len)
         Each single-position perturbation of seq.
     """
+
+    if not isinstance(X_0, numpy.ndarray):
+        raise ValueError("X_0 must be of type numpy.ndarray, not {}".format(type(X_0)))
+
+    if len(X_0.shape) != 3:
+        raise ValueError("X_0 must have three dimensions: (n_seqs, n_choices, seq_len).")
 
     n_seqs, n_choices, seq_len = X_0.shape
     idxs = X_0.argmax(axis=1)
@@ -70,6 +76,12 @@ def delta_perturbations(X_0):
     X: torch.Tensor, shape=(n_seqs, (n_choices-1)*seq_len, n_choices, seq_len)
         Each single-position perturbation of seq.
     """
+
+    if not isinstance(X_0, numpy.ndarray):
+        raise ValueError("X_0 must be of type numpy.ndarray, not {}".format(type(X_0)))
+
+    if len(X_0.shape) != 3:
+        raise ValueError("X_0 must have three dimensions: (n_seqs, n_choices, seq_len).")
 
     n_seqs, n_choices, seq_len = X_0.shape
     idxs = X_0.argmax(axis=1)
@@ -117,6 +129,38 @@ def calculate_flanks(seq_len, receptive_field):
     idxs = list(it.chain(range(fl), range(seq_len-fr, seq_len)))
 
     return fl, fr, idxs
+
+def safe_to_device(X, device):
+    """Move the tensor or model to the device if it doesn't already live there.
+
+    This function will avoid copying if the object already lives in the
+    correct context. Works on PyTorch tensors and PyTorch models that inherit
+    from the torch.nn.Module class.
+
+    Parameters
+    ----------
+    X: torch.tensor
+        The tensor to move to a device.
+
+    device: str
+        The PyTorch context to move the tensor to.
+
+    Returns
+    -------
+    X: torch.tensor
+        The tensor on the desired device.
+    """
+
+    if isinstance(X, torch.Tensor):
+        if X.device == device:
+            return X
+        return X.to(device)
+
+    elif isinstance(X, torch.nn.Module):
+        if next(X.parameters()).device == device:
+            return X
+        return X.to(device)
+
 
 def tensorflow_to_pytorch(tf_model, torch_model):
     """Copy the weights from a Tensorflow model to a PyTorch model.
