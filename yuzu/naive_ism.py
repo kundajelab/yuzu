@@ -10,6 +10,7 @@ import torch
 
 from .utils import perturbations
 
+@torch.no_grad()
 def naive_ism(model, X_0, batch_size=128, device='cpu'):
     """In-silico mutagenesis saliency scores. 
 
@@ -51,6 +52,7 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
     if device[:4] != X_0.device:
         X_0 = X_0.to(device)
 
+    model = model.eval()
     reference = model(X_0).unsqueeze(1)
 
     starts = numpy.arange(0, X.shape[1], batch_size)

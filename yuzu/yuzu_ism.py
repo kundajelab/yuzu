@@ -258,8 +258,6 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     del X_update, X1, rows, cols
     return X_0, X_delta
 
-
-
 @torch.no_grad()
 def _yuzu_ism(model, X_0, precomputation, device='cpu', use_layers=use_layers, 
     ignore_layers=ignore_layers, terminal_layers=terminal_layers, verbose=False):
@@ -534,7 +532,7 @@ def _yuzu_ism(model, X_0, precomputation, device='cpu', use_layers=use_layers,
 
 def yuzu_ism(model, X_0, precomputation, batch_size=1, device='cpu', 
     use_layers=use_layers, ignore_layers=ignore_layers, 
-    terminal_layers=terminal_layers, verbose=False):
+    terminal_layers=terminal_layers, return_timings=False, verbose=False):
     """Perform ISM using compressed sensing to reduce the necessary compute.
 
     This function will take a model, a reference sequence, and a set of
@@ -592,6 +590,7 @@ def yuzu_ism(model, X_0, precomputation, batch_size=1, device='cpu',
     """
 
     X_ism, layer_timings, within_layer_timings = [], [], []
+    model = model.eval()
 
     starts = numpy.arange(0, len(X_0), batch_size)
     for start in starts:
@@ -605,4 +604,6 @@ def yuzu_ism(model, X_0, precomputation, batch_size=1, device='cpu',
         layer_timings.append(layer_timings_)
         within_layer_timings.append(within_layer_timings_)
 
-    return numpy.vstack(X_ism), layer_timings, within_layer_timings
+    if return_timings:
+        return numpy.vstack(X_ism), layer_timings, within_layer_timings
+    return numpy.vstack(X_ism)
