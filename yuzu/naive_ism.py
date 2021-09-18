@@ -10,7 +10,7 @@ import torch
 
 from .utils import perturbations
 
-@torch.no_grad()
+@torch.inference_mode()
 def naive_ism(model, X_0, batch_size=128, device='cpu'):
     """In-silico mutagenesis saliency scores. 
 

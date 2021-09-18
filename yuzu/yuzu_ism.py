@@ -22,7 +22,7 @@ use_layers = torch.nn.Conv1d, torch.nn.MaxPool1d, torch.nn.AvgPool1d
 ignore_layers = torch.nn.ReLU, torch.nn.BatchNorm1d, torch.nn.LogSoftmax
 terminal_layers = Unsqueeze, Flatten
 
-@torch.no_grad()
+@torch.inference_mode()
 def _compressed_sensing_convolution(layer, X_delta, A, beta, mask, 
     n_probes, return_timings=False, verbose=False):
     """Calculate the output of a single layer using compressed sensing.
@@ -128,7 +128,7 @@ def _compressed_sensing_convolution(layer, X_delta, A, beta, mask,
         return X, t
     return X
 
-@torch.no_grad()
+@torch.inference_mode()
 def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes, 
     seq_lens, n_nonzeros, n_perturbs):
     """Performs an exact pooling operation given only the deltas.
@@ -258,7 +258,7 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     del X_update, X1, rows, cols
     return X_0, X_delta
 
-@torch.no_grad()
+@torch.inference_mode()
 def _yuzu_ism(model, X_0, precomputation, device='cpu', use_layers=use_layers, 
     ignore_layers=ignore_layers, terminal_layers=terminal_layers, verbose=False):
     """Perform ISM using compressed sensing to reduce the necessary compute.
