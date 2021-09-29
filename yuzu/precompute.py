@@ -7,12 +7,13 @@ as well as the class that stores the statistics and allows them to be easily
 saved and retrieved.
 """
 
+import math
 import numpy
 import pickle
 import torch
 import random
 
-from .models import Flatten
+from .models import Flatten, Unsqueeze
 
 from .utils import calculate_flanks
 from .utils import perturbations
@@ -23,7 +24,7 @@ from .yuzu_ism import yuzu_ism
 global use_layers, ignore_layers
 use_layers = torch.nn.Conv1d, torch.nn.MaxPool1d, torch.nn.AvgPool1d
 ignore_layers = torch.nn.ReLU, torch.nn.BatchNorm1d, torch.nn.LogSoftmax
-
+terminal_layers = Unsqueeze, Flatten
 
 class Precomputation(object):
 	"""A container for all of the precomputed statistics for Yuzu.
@@ -84,7 +85,7 @@ class Precomputation(object):
 	"""
 
 	def __init__(self, As, betas, masks, receptive_fields, n_probes,
-		seq_lens, n_nonzeros):
+		seq_lens, n_nonzeros, conv_paddings):
 		self.As = As
 		self.betas = betas
 		self.masks = masks
@@ -92,6 +93,7 @@ class Precomputation(object):
 		self.n_probes = n_probes
 		self.seq_lens = seq_lens
 		self.n_nonzeros = n_nonzeros
+		self.conv_paddings = conv_paddings
 
 	def save(self, filename):
 		with open(filename, "w") as outfile:
@@ -173,7 +175,8 @@ def precompute_mask(model, X_0, use_layers, ignore_layers, device,
 		in the sequence before and after the layer is applied. 
 	""" 
 
-	masks, receptive_fields, seq_lens, n_nonzeros = [], [], [], []
+	receptive_fields, seq_lens, n_nonzeros = [], [], []
+	masks, conv_paddings = [], []
 
 	# Generate all the single edit mutations of that sequence
 	X = perturbations(X_0)[0]
@@ -199,15 +202,25 @@ def precompute_mask(model, X_0, use_layers, ignore_layers, device,
 			else:
 				layer.weight[:] = 1
 
+			if len(conv_paddings) == 0:
+				conv_paddings.append((layer.padding[0], layer.padding[0]))
+			else:
+				p = conv_paddings[-1][1]
+				conv_paddings.append((p, p + layer.padding[0]))
+
 		# For the purpose of empirically defining the receptive field,
 		# replace max pools by average pools because max pools can be
 		# effected solely by values outside the known receptive field.
-		if isinstance(layer, torch.nn.MaxPool1d):
+		elif isinstance(layer, (torch.nn.MaxPool1d, torch.nn.AvgPool1d)):
 			layer = torch.nn.AvgPool1d(kernel_size=layer.kernel_size,
 				stride=layer.stride, padding=layer.padding, 
 				ceil_mode=layer.ceil_mode)
 
-		
+			p = conv_paddings[-1][1]
+			conv_paddings.append((p, math.ceil(p // layer.kernel_size[0])))
+		else:
+			conv_paddings.append(conv_paddings[-1])
+
 		# Only go through manually specified layers.
 		if isinstance(layer, use_layers) and not isinstance(layer, ignore_layers):
 			X_delta = torch.abs(X - X_0).max(axis=1).values
@@ -296,20 +309,34 @@ def precompute_mask(model, X_0, use_layers, ignore_layers, device,
 				if len(X_delta.shape) > 2:
 					X_delta = X_delta.max(axis=1).values
 					seq_len = X_0.shape[-1]
+	
+					mask = (X_delta >= 1).type(dtype=torch.bool)
+					n_nonzero = int(mask.sum(dim=0).max())
+					seq_lens_ = bseq_len, seq_len
+
+					fl, fr, idxs = calculate_flanks(seq_len, receptive_field_[1])
+
+					clipped_mask = torch.clone(mask)
+					clipped_mask[:, :fl] = False
+					clipped_mask[:, seq_len-fr:] = False
+
+					mask__ = ([], torch.where(clipped_mask.T == True))
+
+					for i, idx in enumerate(idxs):
+						m = torch.where(mask[:, idx] == True)[0]
+						mask__[0].append(m)
+
 				else:
 					seq_len = seq_lens_[1]
-
-				mask = (X_delta >= 1).type(dtype=torch.bool)
-				n_nonzero = mask.sum(dim=0).max()
-
-				seq_lens_ = bseq_len, seq_len
+					mask__ = mask_[1]
 
 				del X_delta
 			else:
 				seq_lens_ = seq_lens_[1], seq_lens_[1]
+				mask__ = mask_[1]
 
 			receptive_field_ = receptive_field_[1], receptive_field_[1]
-			mask_ = mask_[1], mask_[1]
+			mask_ = mask_[1], mask__
 
 		if verbose:
 			print(l, layer, receptive_field_, seq_lens_, n_nonzeros_)
@@ -323,7 +350,7 @@ def precompute_mask(model, X_0, use_layers, ignore_layers, device,
 		torch.cuda.synchronize()
 		torch.cuda.empty_cache()
 
-	return masks, receptive_fields, seq_lens, n_nonzeros
+	return masks, receptive_fields, seq_lens, n_nonzeros, conv_paddings
 
 @torch.inference_mode()
 def precompute_alpha(model, n_seqs, alpha, precomputation, device, random_state, 
@@ -437,7 +464,8 @@ def precompute_alpha(model, n_seqs, alpha, precomputation, device, random_state,
 
 @torch.inference_mode()
 def precompute(model, seq_len, n_choices=4, alpha=None, threshold=0.9999, 
-	use_layers=use_layers, ignore_layers=ignore_layers, device='cpu', 
+	use_layers=use_layers, ignore_layers=ignore_layers, 
+	terminal_layers=terminal_layers, device='cpu', 
 	random_state=None, verbose=False):
 	"""Precomputing properties of the model for a Yuzu-ISM run.
 
@@ -518,7 +546,7 @@ def precompute(model, seq_len, n_choices=4, alpha=None, threshold=0.9999,
 	X_0 = numpy.zeros((1, n_choices, seq_len), dtype='float32')
 	X_0[0, idxs, numpy.arange(seq_len)] = 1
 
-	masks, receptive_fields, seq_lens, n_nonzeros = precompute_mask(
+	masks, receptive_fields, seq_lens, n_nonzeros, conv_paddings = precompute_mask(
 		model=model, X_0=X_0, use_layers=use_layers, 
 		ignore_layers=ignore_layers, device=device, random_state=random_state, 
 		verbose=verbose)
@@ -529,7 +557,8 @@ def precompute(model, seq_len, n_choices=4, alpha=None, threshold=0.9999,
 		receptive_fields=receptive_fields,
 		n_probes=None,
 		seq_lens=seq_lens,
-		n_nonzeros=n_nonzeros)
+		n_nonzeros=n_nonzeros,
+		conv_paddings=conv_paddings)
 
 	## Evaluation suite.
 	model = model.to(device)
@@ -546,7 +575,9 @@ def precompute(model, seq_len, n_choices=4, alpha=None, threshold=0.9999,
 		precomputation.n_probes = n_probes
 		precomputation.alpha = alpha
 
-		yuzu_isms = yuzu_ism(model, X_0, precomputation, device=device)
+		yuzu_isms = yuzu_ism(model, X_0, precomputation, 
+			use_layers=use_layers, ignore_layers=ignore_layers,
+			terminal_layers=terminal_layers, device=device)
 
 		x = naive_isms.flatten()
 		y = yuzu_isms.flatten()
@@ -559,6 +590,8 @@ def precompute(model, seq_len, n_choices=4, alpha=None, threshold=0.9999,
 
 		if pcorr > threshold:
 			break
+	else:
+		print("Warning: Did not reach correlation threshold. Results may be inaccurate.")
 
 	precomputation.results = numpy.array(results)
 	return precomputation

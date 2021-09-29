@@ -34,17 +34,17 @@ def test_precomputation_output_As_len():
 	assert_equal(len(precomputation.As), len(list(model.children())))
 
 def test_precomputation_output_As_shapes():
-	assert_equal(precomputation.As[0].shape, (50, 40, 3))
-	assert_equal(precomputation.As[3].shape, (12, 198, 36))
-	assert_equal(precomputation.As[6].shape, (3, 225, 150))
+	assert_equal(precomputation.As[0].shape, (50, 27, 3))
+	assert_equal(precomputation.As[3].shape, (12, 133, 36))
+	assert_equal(precomputation.As[6].shape, (3, 151, 150))
 
 def test_precomputation_betas_len():
 	assert_equal(len(precomputation.betas), len(list(model.children())))
 
 def test_precomputation_betas_shapes():
-	assert_equal(precomputation.betas[0].shape, (50, 27, 40))
-	assert_equal(precomputation.betas[3].shape, (12, 132, 198))
-	assert_equal(precomputation.betas[6].shape, (3, 150, 225))
+	assert_equal(precomputation.betas[0].shape, (50, 27, 27))
+	assert_equal(precomputation.betas[3].shape, (12, 132, 133))
+	assert_equal(precomputation.betas[6].shape, (3, 150, 151))
 
 def test_precomputation_masks_len():
 	assert_equal(len(precomputation.masks), len(list(model.children())))
@@ -95,18 +95,18 @@ def test_precomputation_n_probes_len():
 	assert_equal(len(precomputation.n_probes), len(list(model.children())))
 
 def test_precomputation_n_probes():
-	assert_equal(precomputation.n_probes[0], 40)
-	assert_equal(precomputation.n_probes[1], 40)
-	assert_equal(precomputation.n_probes[2], 54)
-	assert_equal(precomputation.n_probes[3], 198)
-	assert_equal(precomputation.n_probes[4], 198)
-	assert_equal(precomputation.n_probes[5], 225)
-	assert_equal(precomputation.n_probes[6], 225)
-	assert_equal(precomputation.n_probes[7], 225)
-	assert_equal(precomputation.n_probes[8], 225)
-	assert_equal(precomputation.n_probes[9], 225)
-	assert_equal(precomputation.n_probes[10], 0)
-	assert_equal(precomputation.n_probes[11], 0)
+	assert_equal(precomputation.n_probes[0], 27)
+	assert_equal(precomputation.n_probes[1], 27)
+	assert_equal(precomputation.n_probes[2], 36)
+	assert_equal(precomputation.n_probes[3], 133)
+	assert_equal(precomputation.n_probes[4], 133)
+	assert_equal(precomputation.n_probes[5], 151)
+	assert_equal(precomputation.n_probes[6], 151)
+	assert_equal(precomputation.n_probes[7], 151)
+	assert_equal(precomputation.n_probes[8], 151)
+	assert_equal(precomputation.n_probes[9], 151)
+	assert_equal(precomputation.n_probes[10], 151)
+	assert_equal(precomputation.n_probes[11], 151)
 
 def test_precomputation_seq_lens_len():
 	assert_equal(len(precomputation.seq_lens), len(list(model.children())))
@@ -121,8 +121,8 @@ def test_precomputation_seq_lens():
 	assert_equal(precomputation.seq_lens[6], (3, 3))
 	assert_equal(precomputation.seq_lens[7], (3, 3))
 	assert_equal(precomputation.seq_lens[8], (3, 3))
-	assert_equal(precomputation.seq_lens[9], (2880, 3))
-	assert_equal(precomputation.seq_lens[10], (925, 3))
+	assert_equal(precomputation.seq_lens[9], (3, 3))
+	assert_equal(precomputation.seq_lens[10], (3, 3))
 	assert_equal(precomputation.seq_lens[11], (925, 925))
 
 def test_precomputation_n_nonzeros_len():

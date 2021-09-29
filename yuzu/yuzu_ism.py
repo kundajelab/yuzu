@@ -101,7 +101,7 @@ def _compressed_sensing_convolution(layer, X_delta, A, beta, mask,
 
     # Run the probes, and the original sequence, through the convolution
     Y = layer(X_probe)
-    Y = Y.reshape(n_seqs, -1, Y.shape[1], seq_len)
+    Y = Y.reshape(n_seqs, -1, Y.shape[1], Y.shape[-1])
     Y = Y.permute(0, 3, 1, 2).contiguous()
 
     if verbose:
@@ -130,7 +130,7 @@ def _compressed_sensing_convolution(layer, X_delta, A, beta, mask,
 
 @torch.inference_mode()
 def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes, 
-    seq_lens, n_nonzeros, n_perturbs):
+    seq_lens, n_nonzeros, conv_padding, n_perturbs):
     """Performs an exact pooling operation given only the deltas.
 
     This function will take in the reference sequence and the delta matrix and
@@ -186,10 +186,10 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     size = int((numpy.ceil(rf0 / ks) + 1) * ks)
     step = (n_nonzeros[0] // rf0) * ks
 
-    offset = n_nonzeros[0] - fl0 * n_nonzeros[0] // rf0 
+    #offset = n_nonzeros[0] - fl0 * n_nonzeros[0] // rf0 
+    offset = n_nonzeros[0] - conv_padding[0] * n_nonzeros[0] // rf0 
 
     ##
-
     mask_map = numpy.maximum(numpy.arange(n_perturbs) - offset, 0) // step * ks
     mask_map2 = numpy.maximum(numpy.arange(n_perturbs) - offset, 0) // step
 
@@ -209,13 +209,8 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
     cols = torch.minimum((cols.T + mask_map[rows[:,0]]).T, t_min)
 
     ##
-
-    # .permute(0, 2, 1) -> 0, 2, 1
-    # .permute(1, 0, 2) -> 2, 0, 1
-
     X1 = X_0.unsqueeze(1).expand(-1, n_perturbs, -1, -1).permute(1, 3, 0, 2)
     X1 = X1[(rows, cols)].permute(1, 0, 2, 3)
-    #X1 = X1.reshape(X1.shape[0]*X1.shape[1], X1.shape[2], X1.shape[3])
 
     for j, idx in enumerate(idxs0):
         r = safe_to_device(masks[0][0][j], "cpu")
@@ -223,22 +218,16 @@ def _delta_pooling(layer, X_0, X_delta, masks, receptive_fields, n_probes,
         X1[(c, r)] += X_delta[:, :len(r), :, idx].permute(1, 0, 2)
 
     X_update = X_delta[:, :, :, fl0:seq_len0-fr0]
-
-    # .permute(2, 0, 1).reshape(-1, X_update.shape[1])
     X_update = X_update.permute(3, 1, 0, 2).reshape(-1, n_seqs, n_filters)
     
     X1[(row_mask00, col_mask0)] += X_update
-
-    # .permute(1, 2, 0)
     X1 = X1.permute(2, 1, 3, 0).reshape(n_perturbs*n_seqs, n_filters, -1)
 
     ##
 
     X_0 = layer(X_0)
-    # .permute(2, 0, 1)
     X_1 = X_0.unsqueeze(1).expand(-1, n_perturbs, -1, -1).permute(3, 1, 0, 2)
 
-    # .permute(2, 0, 1)
     X1 = layer(X1)
     X1 = X1.reshape(n_seqs, n_perturbs, n_filters, -1).permute(3, 1, 0, 2)
     
@@ -443,6 +432,7 @@ def _yuzu_ism(model, X_0, precomputation, device='cpu', use_layers=use_layers,
                 n_probes=precomputation.n_probes[i], 
                 seq_lens=precomputation.seq_lens[i], 
                 n_nonzeros=precomputation.n_nonzeros[i], 
+                conv_padding=precomputation.conv_paddings[i],
                 n_perturbs=n_perturbs)
 
             if verbose:

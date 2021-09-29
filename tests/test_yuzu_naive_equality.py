@@ -26,56 +26,57 @@ X = numpy.zeros((n_seqs, 4, seq_len), dtype='float32')
 for i in range(n_seqs):
 	X[i, idxs[i], numpy.arange(seq_len)] = 1
 
-def evaluate_model(model, X, alpha=2):
+def evaluate_model(model, X, alpha=None):
+	alpha = alpha or 1.5
 	precomputation = precompute(model, seq_len=X.shape[2], 
 		n_choices=X.shape[1], alpha=alpha)
 
 	yuzu_isms = yuzu_ism(model, X, precomputation)
 	naive_isms = naive_ism(model, X)
 
-	assert_array_almost_equal(naive_isms, yuzu_isms, 4)
+	assert_array_almost_equal(naive_isms, yuzu_isms, 3)
 
 def test_one_layer():
 	model = OneLayer(4, seq_len)
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=10)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_toynet():
 	model = ToyNet(4, seq_len)
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=10)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_deepsea():
 	model = DeepSEA(4, seq_len)
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=10)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_basset():
 	model = Basset(4, seq_len)
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=10)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_factorized_basset():
 	model = FactorizedBasset(4, seq_len)
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=10)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.5)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_bpnet():
 	model = ToyNet(4, seq_len)
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=10)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 ###
 
@@ -87,7 +88,7 @@ def test_conv_relu():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp():
 	model = torch.nn.Sequential(
@@ -97,7 +98,7 @@ def test_conv_mp():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_relu_mp():
 	model = torch.nn.Sequential(
@@ -108,7 +109,7 @@ def test_conv_relu_mp():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_conv():
 	model = torch.nn.Sequential(
@@ -119,7 +120,7 @@ def test_conv_mp_conv():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_batchnorm_mp_conv():
 	model = torch.nn.Sequential(
@@ -131,7 +132,7 @@ def test_conv_batchnorm_mp_conv():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_relu_mp_conv():
 	model = torch.nn.Sequential(
@@ -143,7 +144,7 @@ def test_conv_relu_mp_conv():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_relu_batchnorm_mp_conv():
 	model = torch.nn.Sequential(
@@ -156,7 +157,7 @@ def test_conv_relu_batchnorm_mp_conv():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_mp():
 	model = torch.nn.Sequential(
@@ -167,7 +168,7 @@ def test_conv_mp_mp():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_dense():
 	model = torch.nn.Sequential(
@@ -178,7 +179,7 @@ def test_conv_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_relu_dense():
 	model = torch.nn.Sequential(
@@ -190,7 +191,7 @@ def test_conv_relu_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_batchnorm_dense():
 	model = torch.nn.Sequential(
@@ -202,7 +203,7 @@ def test_conv_batchnorm_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_relu_batchnorm_dense():
 	model = torch.nn.Sequential(
@@ -215,7 +216,7 @@ def test_conv_relu_batchnorm_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_dense():
 	model = torch.nn.Sequential(
@@ -227,7 +228,7 @@ def test_conv_mp_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_relu_dense():
 	model = torch.nn.Sequential(
@@ -240,7 +241,7 @@ def test_conv_mp_relu_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_batchnorm_dense():
 	model = torch.nn.Sequential(
@@ -253,7 +254,7 @@ def test_conv_mp_batchnorm_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_batchnorm_relu_dense():
 	model = torch.nn.Sequential(
@@ -267,7 +268,7 @@ def test_conv_mp_batchnorm_relu_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_conv_dense():
 	model = torch.nn.Sequential(
@@ -280,7 +281,7 @@ def test_conv_mp_conv_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_conv_dense_dense():
 	model = torch.nn.Sequential(
@@ -294,7 +295,7 @@ def test_conv_mp_conv_dense_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_conv_dense_relu_dense():
 	model = torch.nn.Sequential(
@@ -309,7 +310,7 @@ def test_conv_mp_conv_dense_relu_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_conv_dense_batchnorm_dense():
 	model = torch.nn.Sequential(
@@ -324,7 +325,7 @@ def test_conv_mp_conv_dense_batchnorm_dense():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
 
 def test_conv_mp_conv_dense_batchnorm_dense_relu():
 	model = torch.nn.Sequential(
@@ -340,4 +341,269 @@ def test_conv_mp_conv_dense_batchnorm_dense_relu():
 
 	evaluate_model(model, X)
 	evaluate_model(model, X, alpha=100)
-	assert_raises(AssertionError, evaluate_model, model, X, alpha=1)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+##
+
+def test_conv_relu_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.ReLU()
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(3)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_relu_mp_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.ReLU(),
+		torch.nn.MaxPool1d(3)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_conv_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(3),
+		torch.nn.Conv1d(8, 6, kernel_size=7)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_batchnorm_mp_conv_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.BatchNorm1d(8),
+		torch.nn.MaxPool1d(3),
+		torch.nn.Conv1d(8, 6, kernel_size=7)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_relu_mp_conv_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.ReLU(),
+		torch.nn.MaxPool1d(3),
+		torch.nn.Conv1d(8, 6, kernel_size=7)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_relu_batchnorm_mp_conv_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.ReLU(),
+		torch.nn.BatchNorm1d(8),
+		torch.nn.MaxPool1d(3),
+		torch.nn.Conv1d(8, 6, kernel_size=7)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_mp_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(3),
+		torch.nn.MaxPool1d(2)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		Flatten(),
+		torch.nn.Linear(1152, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_relu_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.ReLU(),
+		Flatten(),
+		torch.nn.Linear(1152, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_batchnorm_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.BatchNorm1d(8),
+		Flatten(),
+		torch.nn.Linear(1152, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_relu_batchnorm_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.ReLU(),
+		torch.nn.BatchNorm1d(8),
+		Flatten(),
+		torch.nn.Linear(1152, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		Flatten(),
+		torch.nn.Linear(576, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_relu_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.ReLU(),
+		Flatten(),
+		torch.nn.Linear(576, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_batchnorm_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.BatchNorm1d(8),
+		Flatten(),
+		torch.nn.Linear(576, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_batchnorm_relu_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.BatchNorm1d(8),
+		torch.nn.ReLU(),
+		Flatten(),
+		torch.nn.Linear(576, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_conv_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.Conv1d(8, 6, kernel_size=7),
+		Flatten(),
+		torch.nn.Linear(396, 5)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_conv_dense_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.Conv1d(8, 6, kernel_size=7),
+		Flatten(),
+		torch.nn.Linear(396, 5),
+		torch.nn.Linear(5, 3)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_conv_dense_relu_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.Conv1d(8, 6, kernel_size=7),
+		Flatten(),
+		torch.nn.Linear(396, 5),
+		torch.nn.ReLU(),
+		torch.nn.Linear(5, 3)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_conv_dense_batchnorm_dense_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.Conv1d(8, 6, kernel_size=7),
+		Flatten(),
+		torch.nn.Linear(396, 5),
+		torch.nn.BatchNorm1d(5),
+		torch.nn.Linear(5, 3)
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
+
+def test_conv_mp_conv_dense_batchnorm_dense_relu_nopad():
+	model = torch.nn.Sequential(
+		torch.nn.Conv1d(4, 8, kernel_size=7),
+		torch.nn.MaxPool1d(2),
+		torch.nn.Conv1d(8, 6, kernel_size=7),
+		Flatten(),
+		torch.nn.Linear(396, 5),
+		torch.nn.BatchNorm1d(5),
+		torch.nn.Linear(5, 3),
+		torch.nn.ReLU()
+	)
+
+	evaluate_model(model, X)
+	evaluate_model(model, X, alpha=100)
+	assert_raises(AssertionError, evaluate_model, model, X, alpha=0.95)
