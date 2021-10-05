@@ -4,13 +4,32 @@ Tired of spinning around in your chair while your feature attribution calculatio
 
 ### How fast is it?
 
+Across six different models, Yuzu is significantly faster than the naive ISM approach as well as another method for speeding up ISM, fastISM. 
+
+<img src="https://github.com/kundajelab/yuzu/blob/main/figs/yuzu_timings.png" width=900>
+
+Yuzu shines in the interactive setting, where a small number of sequences are being analyzed. This is because the per-batch bookkeepping that fastISM does is replaced with the construction and decoding of probes using compressed sensing, which is a much faster operation. However, when one has enough GPU memory for very large batch sizes, fastISM seems like it will provide similar or faster speeds than Yuzu. 
+
+
 ### How does it work?
 
-Yuzu relies on two complimentary components: computing only on deltas, and compressed sensing. 
+Yuzu relies on two complimentary ideas: doing computations on the difference in layer outputs between the mutated sequences and the reference sequence (the deltas), and using compressed sensing to compress these sparse deltas into a compact set of informative probes. 
 
-(1) The first component, computing only on deltas, speeds up the process because each mutated sequences contains only a single mutation and that mutation's effect on the output from each layer in the model is limited by the receptive field of that layer. For example, a convolution layer with a kernel size of 7 applied to a sequence with a single mutation in it will exhibit the same output as the original sequence outside the 13-bp window (6 bp in either direction and the central bp) will not exhibit changes in the output 7 bp in either direction from a mutation in the input. 
+<img src="https://github.com/kundajelab/yuzu/blob/main/figs/yuzu_schematic.png" width=900>
 
-(2) The second component, compressed sensing, speeds up the process by compressing these deltas from one span per mutated sequence into a small set of dense "probes." Each probe contains a Gaussian random projection of the deltas from all of the mutated sequences. Although the principles of compressed sensing are for linear models, and neural networks are notoriously non-linear, each layer before the activation is a linear operation. So, for each convolution in the model, Yuzu constructs probes from the delta matrix, runs them through a compressed convolution operation, and decodes the outputs back into a new delta matrix. When activation layers are encountered, the reference sequence is added to the delta matrix to recover the original values, the non-linear operation is applied, and the deltas are re-extracted. 
+Accordingly, Yuzu begins by taking in a sparse tensor indicating where the mutations in the sequence are (A). Then, Yuzu proceeds through the network sequentially, choosing what to do next depending on the operation encountered.
+
+(1) A convolution: Yuzu compresses the sparse deltas into a compact set of informative probes (B). Importantly, the number of probes depends only on the receptive field of the operation and not on the length of the sequence, whereas naive ISM runs each operation on a number of sequences proportional to the length of the sequence.
+
+(2) A pool: Yuzu extracts the relevant windows surrounding the deltas, adds the reference values to the deltas, applies the operation, and subtracts the after-pool reference values to recover the deltas.
+
+(3) An element- or position-wise operation (C): The same as (2) except the respective operation is applied. 
+
+(4) A dense layer preceeded by a convolution: Although the receptive field of a dense layer spans the entire input, if the input is sparse then the sparse operation is performed to save memory and speed.
+
+(5) A dense layer preceeded by a dense layer: Once this point is encountered, Yuzu proceeds like naive ISM.
+
+More details are in the paper. 
 
 ### Installation
 
@@ -36,14 +55,14 @@ for i in range(3):
 model = ToyNet(n_inputs=4, seq_len=1000)
 
 # Do the precomputation once or load your previously-calculated precomputation
-yuzu_stats = precompute(model, X_0[:1], device='cpu')
+precomputation = precompute(model, seq_len=1000, device='cpu')
 
 # Run yuzu_ism on as many sequences as you'd like. 
-yuzu_ism, layer_timings, within_layer_timings = yuzu_ism(model, X_0, *yuzu_stats, device='cpu')
+yuzu_ism, layer_timings, within_layer_timings = yuzu_ism(model, X_0, precomputation, device='cpu')
 ```
 
 ### Limitations
 
 Currently, Yuzu can only be run on models of modest size (unfortunately, no Bassenji- or Enformer-scale models quite yet). This is because a limitation of the compressed sensing formulation is that all mutated sequences must be solved simultaneously. However, remember that the mutated sequences are compressed into a much smaller set of probes. A GPU with 12GB of memory can easily handle a Basset-sized model with a sequence length of 2,000 (6,000 sequences decoded simultaneously) because Yuzu only operates on the compressed probes directly. 
 
-A second limitation is that Yuzu requires that, when the model is specified, that each operation is listed sequentially in the order that it is executed in the forward pass and that no operations other than these layers are performed in the forward pass. This is because Yuzu sequentially iterates over the layers of the model using the `model.children()` function rather than through the forward function. So, if the data is resized or flattened, it must be done through a custom layer that wraps the operation.
+A second limitation is that Yuzu requires that, when the model is specified, that each operation is listed sequentially in the order that it is executed in the forward pass and that no operations other than these layers are performed in the forward pass. This is because Yuzu sequentially iterates over the layers of the model using the `model.children()` function rather than through the forward function. So, if the data is resized or flattened, it must be done through a custom layer that wraps the operation. See Tutorial 3 for more details on how to apply Yuzu to pre-trained models that were not specified in this way.
