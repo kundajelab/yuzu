@@ -12,7 +12,9 @@ Across six different models, Yuzu is significantly faster than the naive ISM app
 
 <img src="https://github.com/kundajelab/yuzu/blob/main/figs/yuzu_timings.png" width=900>
 
-Yuzu shines in the interactive setting, where one sequence, or a small number of sequences, are being analyzed. This setting most commonly arises when one is exploring their model in a Jupyter notebook or needs to generate visualizations of a few exemplar sequences minutes before a meeting with their advisor. Yuzu's speed comes from replacing the per-batch bookkeepping that fastISM does with the construction and decoding of probes using compressed sensing, which involves fast matrix multiplies. However, to be fair, the results suggest that when one has enough GPU memory and very large batch sizes, fastISM will be similarly fast or faster than Yuzu.
+(Note: In the above figure, some of the lines end before reaching the right-hand side because the GPU runs out of memory.)
+
+Yuzu shines in the interactive setting, where one sequence, or a small number of sequences, are being analyzed. This setting most commonly arises when one is exploring their model in a Jupyter notebook or needs to generate visualizations of a few exemplar sequences minutes before a meeting with their advisor. Yuzu's speed comes from replacing the per-batch bookkeepping that fastISM does with the construction and decoding of probes using compressed sensing, which involves fast matrix multiplies. However, to be fair, the results suggest that when one has enough GPU memory and very large batch sizes, fastISM will be similarly fast or faster than Yuzu. 
 
 ### How does it work?
 
