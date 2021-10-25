@@ -190,7 +190,7 @@ class FactorizedBasset(torch.nn.Module):
 		self.fc2 = torch.nn.Linear(1000, 1000)
 		self.relu5 = torch.nn.ReLU()
 		self.bn5 = torch.nn.BatchNorm1d(1000)
-		self.fc3 = torch.nn.Linear(1000, 1)
+		self.fc3 = torch.nn.Linear(1000, 164)
 		self.unsqueeze = Unsqueeze(1)
 
 	def forward(self, x):
