@@ -58,9 +58,11 @@ def naive_ism(model, X_0, batch_size=128, device='cpu'):
     starts = numpy.arange(0, X.shape[1], batch_size)
     isms = []
     for i in range(n_seqs):
+        X = perturbations(X_0[i])
         y = []
+
         for start in starts:
-            X_ = X[i, start:start+batch_size]
+            X_ = X[0, start:start+batch_size]
             if device[:4] == 'cuda': 
                 X_ = X_.to(device)
             
