@@ -59,7 +59,7 @@ model = ToyNet(n_inputs=4, seq_len=1000)
 precomputation = precompute(model, seq_len=1000, device='cpu')
 
 # Line 2: Run yuzu_ism on as many sequences as you'd like. 
-yuzu_ism, layer_timings, within_layer_timings = yuzu_ism(model, X_0, precomputation, device='cpu')
+ism = yuzu_ism(model, X_0, precomputation, device='cpu')
 ```
 
 In only two lines of code you can significantly speed up ISM!
